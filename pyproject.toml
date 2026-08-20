@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opsai"
+version = "0.1.0"
+description = "AI terminal command helper - ask in plain English, get the exact command"
+readme = "README_PYPI.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "techikrish" }]
+keywords = ["cli", "terminal", "ai", "shell", "commands", "opsai"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "requests>=2.31,<3",
+    "keyring>=24.0,<26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "build>=1.0",
+]
+
+[project.scripts]
+opsai = "opsai.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

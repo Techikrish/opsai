@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 920px;
+      height: 400px;
+      background: #0b0f14;
+      font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      -webkit-font-smoothing: antialiased;
+    }
+    .stage {
+      width: 920px;
+      height: 400px;
+      padding: 36px 40px;
+    }
+    .window {
+      height: 328px;
+      background: #111820;
+      border: 1px solid #2a3a4c;
+      border-radius: 16px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+    }
+    .titlebar {
+      display: flex;
+      align-items: center;
+      height: 44px;
+      padding: 0 16px;
+      background: #0e151c;
+      border-bottom: 1px solid #223040;
+    }
+    .dots { display: flex; gap: 7px; width: 120px; }
+    .dot { width: 11px; height: 11px; border-radius: 50%; }
+    .dot.r { background: #ff5f57; }
+    .dot.y { background: #febc2e; }
+    .dot.g { background: #28c840; }
+    .title {
+      flex: 1;
+      text-align: center;
+      color: #c9d4e0;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+    }
+    .meta {
+      width: 220px;
+      text-align: right;
+      color: #6d7f91;
+      font-size: 11px;
+      font-weight: 400;
+    }
+    .body {
+      padding: 28px 32px 24px;
+      color: #e8eef4;
+      font-size: 16.5px;
+      line-height: 1.55;
+    }
+    .prompt { color: #6d7f91; }
+    .bin { color: #3ee0a0; font-weight: 500; }
+    .query { color: #e8eef4; }
+    .out {
+      margin-top: 22px;
+    }
+    .chev { color: #3ee0a0; }
+    .cmd { color: #7dd3fc; font-weight: 500; }
+    .info {
+      margin-top: 4px;
+      padding-left: 22px;
+      color: #8b9aab;
+      font-size: 14.5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="window">
+      <div class="titlebar">
+        <div class="dots">
+          <span class="dot r"></span>
+          <span class="dot y"></span>
+          <span class="dot g"></span>
+        </div>
+        <div class="title">opsai</div>
+        <div class="meta">qwen2.5:0.5b · local</div>
+      </div>
+      <div class="body">
+        <div>
+          <span class="prompt">$</span>
+          <span class="bin"> opsai</span>
+          <span class="query"> 'roll back the last deployment in kubernetes'</span>
+        </div>
+        <div class="out">
+          <div><span class="chev">  &gt;</span> <span class="cmd">kubectl rollout undo deployment/my-app</span></div>
+          <div class="info">Reverts the deployment to its previous revision</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
