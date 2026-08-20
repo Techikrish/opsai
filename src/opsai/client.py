@@ -19,6 +19,19 @@ class OpsaiError(Exception):
     """User-facing error; message is safe to print (already redacted)."""
 
 
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
+def is_local_url(url: str) -> bool:
+    """True if the URL points at a local model server (Ollama/LM Studio)."""
+    lowered = url.lower()
+    try:
+        host = lowered.split("//", 1)[1].split("/")[0].split(":")[0]
+    except IndexError:
+        return False
+    return host in _LOCAL_HOSTS
+
+
 def _validate_url(url: str) -> str:
     url = url.rstrip("/")
     lowered = url.lower()
@@ -26,7 +39,7 @@ def _validate_url(url: str) -> str:
         raise OpsaiError("base_url must not contain embedded credentials (user:pass@host).")
     if lowered.startswith("http://"):
         host = lowered[len("http://"):].split("/")[0].split(":")[0]
-        if host not in ("localhost", "127.0.0.1", "::1"):
+        if host not in _LOCAL_HOSTS:
             raise OpsaiError(
                 f"Refusing plaintext HTTP to non-localhost host {host!r}. "
                 "Use HTTPS or a local model server (Ollama/LM Studio)."
@@ -49,7 +62,11 @@ def chat_completion(
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    payload = {"model": model, "messages": messages}
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.3,
+    }
     try:
         resp = requests.post(
             url,

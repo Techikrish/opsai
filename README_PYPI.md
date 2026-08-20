@@ -7,6 +7,9 @@ no long explanations, no chatter.
 $ opsai 'roll back the last deployment in kubernetes'
   > kubectl rollout undo deployment/my-app
     Reverts the deployment to its previous revision
+    Details
+      Use `kubectl rollout history deployment/my-app` to list all
+      revisions, then `undo --to-revision=<n>` to pick a specific one.
 ```
 
 Forgot that one kubectl, docker, git or systemd incantation? Working with
@@ -31,7 +34,7 @@ Want it as the default? Save it once:
 opsai --config
 # Base URL: http://localhost:11434/v1
 # Model:    qwen2.5:0.5b
-# API key:  (skip - not needed for local models)
+# API key:  (not asked - local servers need no key)
 ```
 
 Bigger local models (7B+) give even better answers on capable hardware — the
@@ -89,7 +92,9 @@ Precedence: `--flag` > env var > config file > defaults.
 ## API keys (when not using local models)
 
 `opsai --config` stores your key in the **OS keyring** (GNOME Keyring /
-KWallet / Keychain / Credential Manager) — never written to disk. No keyring
+KWallet / Keychain / Credential Manager) — never written to disk. **Local
+servers (Ollama/LM Studio) need no API key at all** — opsai detects a
+localhost base URL and skips the key requirement. No keyring
 backend? Use the environment:
 
 ```bash

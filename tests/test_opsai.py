@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from opsai import cli, config as cfg, keyring_store
-from opsai.client import OpsaiError, _validate_url, chat_completion
+from opsai.client import OpsaiError, _validate_url, chat_completion, is_local_url
 from opsai.output import render
 from opsai.prompt import build_messages, extract_json, parse_answer
 from opsai.security import danger_flags, looks_like_pasted_output, sanitize_output
@@ -40,7 +40,12 @@ class TestExtractJson:
 class TestParseAnswer:
     def test_valid(self):
         answer = parse_answer('{"command": "ls", "info": "list files"}')
-        assert answer == {"command": "ls", "info": "list files"}
+        assert answer == {"command": "ls", "info": "list files", "details": ""}
+
+    def test_valid_with_details(self):
+        answer = parse_answer('{"command": "aws s3api create-bucket --bucket my-bucket", "info": "Creates a bucket", "details": "Then enable versioning with put-bucket-versioning."}')
+        assert answer["command"].startswith("aws")
+        assert "versioning" in answer["details"]
 
     def test_command_null_when_missing(self):
         answer = parse_answer('{"info": "nothing to do"}')
@@ -54,6 +59,40 @@ class TestParseAnswer:
         answer = parse_answer("no json here at all")
         assert answer["command"] is None
         assert answer["info"]
+        assert answer["details"] == ""
+
+
+class TestFallbackParse:
+    def test_prose_with_sh_fence(self):
+        text = "Sure! Here's how to create a bucket:\n\n```sh\naws s3api create-bucket --bucket my-bucket\n```\n\nThen enable versioning."
+        answer = parse_answer(text)
+        assert answer["command"] == "aws s3api create-bucket --bucket my-bucket"
+        assert answer["info"]
+        assert "versioning" in answer["details"]
+
+    def test_prose_with_json_fence_containing_bad_json(self):
+        text = "```json\n{\"command\": \"git log --oneline\", \"info\": \"x\"\n```"
+        answer = parse_answer(text)
+        assert answer["command"] == "git log --oneline"
+
+    def test_prose_single_command_line(self):
+        text = "You can list pods with kubectl get pods --all-namespaces and that shows everything."
+        answer = parse_answer(text)
+        assert answer["command"] == "kubectl get pods --all-namespaces"
+
+    def test_prose_comment_lines_ignored(self):
+        text = "Steps:\n# create the dir first\nmkdir -p ~/.kube\nkubectl config view"
+        answer = parse_answer(text)
+        assert answer["command"].startswith("mkdir")
+
+    def test_pure_prose_returns_none(self):
+        text = "The weather is nice today and the sun is shining brightly."
+        assert parse_answer(text)["command"] is None
+
+    def test_llm_style_markdown_bullets(self):
+        text = "To restart nginx:\n- run: systemctl restart nginx\n- check status: systemctl status nginx"
+        answer = parse_answer(text)
+        assert answer["command"] == "systemctl restart nginx"
 
 
 class TestBuildMessages:
@@ -168,6 +207,25 @@ class TestClient:
         with pytest.raises(OpsaiError):
             _validate_url("https://user:pass@api.example.com/v1")
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:11434/v1",
+            "http://localhost:1234/v1",
+            "https://localhost:8080/v1",
+        ],
+    )
+    def test_is_local_url_true(self, url):
+        assert is_local_url(url)
+
+    @pytest.mark.parametrize(
+        "url",
+        ["https://api.openai.com/v1", "https://api.groq.com/openai/v1", "http://192.168.1.10:11434/v1"],
+    )
+    def test_is_local_url_false(self, url):
+        assert not is_local_url(url)
+
     def test_redirects_are_not_followed(self, monkeypatch):
         seen = {}
 
@@ -268,6 +326,23 @@ class TestOutput:
         assert "ls" in captured
         assert "spoof" not in captured
 
+    def test_render_details(self, capsys):
+        render("aws s3api create-bucket --bucket my-bucket", "Creates a bucket", "Step 1: pick a name.\nStep 2: enable versioning.")
+        captured = capsys.readouterr().out
+        assert "Details" in captured
+        assert "Step 1: pick a name." in captured
+        assert "Step 2: enable versioning." in captured
+
+    def test_render_details_sanitized(self, capsys):
+        render("ls", "info", "step\x1b[31m red")
+        assert "\x1b" not in capsys.readouterr().out
+
+    def test_render_no_command_with_details(self, capsys):
+        render(None, "No safe command exists", "You need a cloud account first.")
+        captured = capsys.readouterr().out
+        assert "NO COMMAND" in captured
+        assert "cloud account" in captured
+
 
 class TestConfigFileSecurity:
     def test_config_file_mode_is_0600(self, tmp_path):
@@ -346,6 +421,38 @@ class TestCli:
         assert rc == 1
         assert "NO API KEY" in capsys.readouterr().err
 
+    def test_one_shot_local_no_key_succeeds(self, capsys, monkeypatch):
+        monkeypatch.delenv("OPSAI_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setattr("opsai.keyring_store.get_api_key", lambda: None)
+
+        def fake_chat(base_url, model, api_key, messages):
+            assert api_key is None
+            return '{"command": "kubectl get pods", "info": "Lists all pods"}'
+
+        monkeypatch.setattr(cli, "chat_completion", fake_chat)
+        rc = cli.main(
+            [
+                "--base-url",
+                "http://localhost:11434/v1",
+                "--model",
+                "qwen2.5:0.5b",
+                "show pods in k9s",
+            ]
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "kubectl get pods" in out
+        assert "NO API KEY" not in out
+
+    def test_one_shot_remote_no_key_still_warns(self, capsys, monkeypatch):
+        monkeypatch.delenv("OPSAI_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setattr("opsai.keyring_store.get_api_key", lambda: None)
+        rc = cli.main(["--base-url", "https://api.openai.com/v1", "list files"])
+        assert rc == 1
+        assert "NO API KEY" in capsys.readouterr().err
+
     def test_one_shot_success(self, capsys, monkeypatch):
         monkeypatch.setattr("opsai.cli._resolve_key", lambda k: "test-key")
 
@@ -364,3 +471,51 @@ class TestCli:
             cli.main(["--version"])
         assert exc.value.code == 0
         assert "opsai" in capsys.readouterr().out
+
+    def test_one_shot_retries_on_unparseable(self, capsys, monkeypatch):
+        monkeypatch.setattr("opsai.cli._resolve_key", lambda k: "test-key")
+        calls = []
+
+        def fake_chat(base_url, model, api_key, messages):
+            calls.append(messages)
+            if len(calls) == 1:
+                return "here is some prose with no command whatsoever"
+            return '{"command": "git log --oneline", "info": "Shows history", "details": "Add -p for patches."}'
+
+        monkeypatch.setattr(cli, "chat_completion", fake_chat)
+        rc = cli.main(["show git history"])
+        assert rc == 0
+        assert len(calls) == 2
+        assert "git log --oneline" in capsys.readouterr().out
+
+    def test_one_shot_no_retry_when_prose_has_command(self, capsys, monkeypatch):
+        monkeypatch.setattr("opsai.cli._resolve_key", lambda k: "test-key")
+        calls = []
+
+        def fake_chat(base_url, model, api_key, messages):
+            calls.append(messages)
+            return "Sure! You can list pods with kubectl get pods --all-namespaces."
+
+        monkeypatch.setattr(cli, "chat_completion", fake_chat)
+        rc = cli.main(["list pods"])
+        assert rc == 0
+        assert len(calls) == 1
+        assert "kubectl get pods --all-namespaces" in capsys.readouterr().out
+
+    def test_chat_history_is_capped(self, monkeypatch, capsys):
+        import builtins
+
+        monkeypatch.setattr("opsai.cli._resolve_key", lambda k: "test-key")
+        inputs = iter(["q1", "q2", "q3", "q4", "q5", "exit"])
+        monkeypatch.setattr(builtins, "input", lambda *a: next(inputs))
+        seen = []
+
+        def fake_chat(base_url, model, api_key, messages):
+            seen.append(len(messages))
+            return '{"command": "echo ok", "info": "fine", "details": ""}'
+
+        monkeypatch.setattr(cli, "chat_completion", fake_chat)
+        rc = cli.main(["--chat"])
+        assert rc == 0
+        assert max(seen) <= cli.MAX_HISTORY_MESSAGES + 2
+        assert seen[-1] <= cli.MAX_HISTORY_MESSAGES + 2

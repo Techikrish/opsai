@@ -6,6 +6,9 @@ AI terminal command helper. Ask in plain English, get the exact command.
 $ opsai 'roll back the last deployment in kubernetes'
   > kubectl rollout undo deployment/my-app
     Reverts the deployment to its previous revision
+    Details
+      Use `kubectl rollout history deployment/my-app` to list all
+      revisions, then `undo --to-revision=<n>` to pick a specific one.
 ```
 
 ## Why opsai?
@@ -38,7 +41,7 @@ Make it the default:
 opsai --config
 # Base URL: http://localhost:11434/v1
 # Model:    qwen2.5:0.5b
-# API key:  (skip - not needed for local models)
+# API key:  (not asked - local servers need no key)
 ```
 
 ## Install
@@ -54,7 +57,9 @@ opsai --config        # interactive: base URL, model, API key
 ```
 
 The API key is stored in your **OS keyring** (GNOME Keyring / KWallet /
-Keychain / Credential Manager) — never written to disk. If no keyring backend
+Keychain / Credential Manager) — never written to disk. **Local servers
+(Ollama/LM Studio) need no API key at all** — opsai detects a localhost base
+URL and skips the key requirement. If no keyring backend
 is available, use an environment variable instead:
 
 ```bash

@@ -9,10 +9,17 @@ import sys
 from opsai import __version__
 from opsai import config as cfg
 from opsai import keyring_store
-from opsai.client import OpsaiError, chat_completion
+from opsai.client import OpsaiError, chat_completion, is_local_url
 from opsai.output import render
 from opsai.prompt import build_messages, parse_answer
 from opsai.security import inject_warning, looks_like_pasted_output
+
+MAX_HISTORY_MESSAGES = 8
+UNPARSEABLE = "The model returned an unparseable response. Try again."
+_NUDGE = (
+    "Your previous reply was not valid JSON. Reply with ONLY the JSON object "
+    '{"command": "...", "info": "...", "details": "..."} - nothing else.'
+)
 
 
 def _resolve_key(flag_key: str | None) -> str | None:
@@ -32,7 +39,18 @@ def _run_query(query: str, settings: dict, api_key: str | None, history: list[di
         api_key=api_key,
         messages=messages,
     )
-    return parse_answer(reply)
+    answer = parse_answer(reply)
+    if answer["command"] is None and answer["info"] == UNPARSEABLE:
+        messages.append({"role": "assistant", "content": reply})
+        messages.append({"role": "user", "content": _NUDGE})
+        reply2 = chat_completion(
+            base_url=settings["base_url"],
+            model=settings["model"],
+            api_key=api_key,
+            messages=messages,
+        )
+        answer = parse_answer(reply2)
+    return answer
 
 
 def _warn_no_key() -> None:
@@ -43,8 +61,13 @@ def _warn_no_key() -> None:
     )
 
 
+def _key_required(settings: dict, api_key: str | None) -> bool:
+    """A key is only required for remote APIs; local Ollama/LM Studio need none."""
+    return not api_key and not is_local_url(settings["base_url"])
+
+
 def cmd_one_shot(query: str, settings: dict, api_key: str | None) -> int:
-    if not api_key:
+    if _key_required(settings, api_key):
         _warn_no_key()
         return 1
     if looks_like_pasted_output(query):
@@ -54,12 +77,12 @@ def cmd_one_shot(query: str, settings: dict, api_key: str | None) -> int:
     except OpsaiError as exc:
         print(f"  [ERROR] {exc}", file=sys.stderr)
         return 1
-    render(answer["command"], answer["info"])
+    render(answer["command"], answer["info"], answer.get("details", ""))
     return 0
 
 
 def cmd_chat(settings: dict, api_key: str | None) -> int:
-    if not api_key:
+    if _key_required(settings, api_key):
         _warn_no_key()
         return 1
     history: list[dict] = []
@@ -82,26 +105,30 @@ def cmd_chat(settings: dict, api_key: str | None) -> int:
             print(f"  [ERROR] {exc}", file=sys.stderr)
             continue
         history.append({"role": "user", "content": query})
-        render(answer["command"], answer["info"])
+        render(answer["command"], answer["info"], answer.get("details", ""))
         if answer["command"]:
             history.append({"role": "assistant", "content": answer["command"]})
+        history = history[-MAX_HISTORY_MESSAGES:]
     return 0
 
 
 def cmd_config() -> int:
     base_url = input(f"Base URL [{cfg.DEFAULT_BASE_URL}]: ").strip() or cfg.DEFAULT_BASE_URL
     model = input(f"Model [{cfg.DEFAULT_MODEL}]: ").strip() or cfg.DEFAULT_MODEL
-    print("  API key (stored in OS keyring, never written to disk) - blank to skip:")
-    key = getpass.getpass("> ").strip()
-    if key:
-        if keyring_store.store_api_key(key):
-            print("  API key stored in OS keyring.")
-        else:
-            print(
-                "  No keyring backend available - key NOT stored. Use the\n"
-                "  OPSAI_API_KEY environment variable instead (see README).",
-                file=sys.stderr,
-            )
+    if not is_local_url(base_url):
+        print("  API key (stored in OS keyring, never written to disk) - blank to skip:")
+        key = getpass.getpass("> ").strip()
+        if key:
+            if keyring_store.store_api_key(key):
+                print("  API key stored in OS keyring.")
+            else:
+                print(
+                    "  No keyring backend available - key NOT stored. Use the\n"
+                    "  OPSAI_API_KEY environment variable instead (see README).",
+                    file=sys.stderr,
+                )
+    else:
+        print("  Local server detected - no API key needed.")
     cfg.save_config(base_url, model)
     print(f"  Saved settings to {cfg.CONFIG_FILE} (non-secret only).")
     return 0
