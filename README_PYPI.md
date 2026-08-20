@@ -19,13 +19,15 @@ in plain English and copy the answer straight into your terminal.
 ## Best use case: fully local with Ollama
 
 `opsai` shines as a **100% local, private, offline-friendly** setup using
-Ollama with a tiny model. A small **0.5B model is perfect** for this — command
-completion is a simple task, so the small model answers fast on CPU with no
-GPU, and your queries never leave your machine.
+Ollama. **For good, accurate results use at least a 7B model** —
+`qwen2.5:7b` is a great default that fits in ~4.7 GB and runs on most
+machines. A 0.5B model technically works but is prone to wrong or
+hallucinated flags, so treat it as a resource-constrained fallback only.
+Either way, your queries never leave your machine.
 
 ```bash
-ollama pull qwen2.5:0.5b
-opsai --base-url http://localhost:11434/v1 --model qwen2.5:0.5b 'get the pods in the kube-system namespace'
+ollama pull qwen2.5:7b
+opsai --base-url http://localhost:11434/v1 --model qwen2.5:7b 'get the pods in the kube-system namespace'
 ```
 
 Want it as the default? Save it once:
@@ -33,12 +35,12 @@ Want it as the default? Save it once:
 ```bash
 opsai --config
 # Base URL: http://localhost:11434/v1
-# Model:    qwen2.5:0.5b
+# Model:    qwen2.5:7b
 # API key:  (not asked - local servers need no key)
 ```
 
-Bigger local models (7B+) give even better answers on capable hardware — the
-interface is identical.
+Bigger local models (13B, 70B) give even better answers on capable hardware —
+the interface is identical.
 
 ## Install
 
@@ -53,7 +55,7 @@ OpenAI, Groq, Ollama, LM Studio — anything speaking the
 
 | Provider | Base URL | Example model |
 |---|---|---|
-| Ollama (local, recommended) | `http://localhost:11434/v1` | `qwen2.5:0.5b` |
+| Ollama (local, recommended) | `http://localhost:11434/v1` | `qwen2.5:7b` |
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
 | Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
 | LM Studio (local) | `http://localhost:1234/v1` | any loaded model |
